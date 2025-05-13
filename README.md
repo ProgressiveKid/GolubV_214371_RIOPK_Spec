@@ -23,59 +23,117 @@
 ### C4-модель
 
 #### Контекстный уровень
-![Контекст]![image](https://github.com/user-attachments/assets/55fea538-845e-48b1-84d4-4b5c0cdda771)
+![image](https://github.com/user-attachments/assets/55fea538-845e-48b1-84d4-4b5c0cdda771)
 
 
 #### Контейнерный уровень
-![Контейнеры]![image](https://github.com/user-attachments/assets/7d51e7d4-9941-4837-945e-83d4b78fb5af)
+![image](https://github.com/user-attachments/assets/7d51e7d4-9941-4837-945e-83d4b78fb5af)
 
 
 #### Компонентный уровень
-![Компоненты]![image](https://github.com/user-attachments/assets/d8d49aaa-a3b6-4c04-a699-20109198a787)
+![image](https://github.com/user-attachments/assets/d8d49aaa-a3b6-4c04-a699-20109198a787)
 
 
 ### Схема данных
-![ER-модель](docs/ER_Diagram.png)
+![image](https://github.com/user-attachments/assets/09b68576-134c-403f-8cb8-aebc16c41241)
+
 
 ```sql
 -- SQL-скрипт для создания базы данных
+-- Сброс схемы для чистой генерации
+DROP SCHEMA IF EXISTS corp_risk_management CASCADE;
+CREATE SCHEMA corp_risk_management;
+SET search_path TO corp_risk_management;
+
+-- Таблица пользователей
 CREATE TABLE users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT UNIQUE NOT NULL,
-    hashed_password TEXT NOT NULL,
-    role TEXT NOT NULL
+    user_id SERIAL PRIMARY KEY,
+    username VARCHAR(100) NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    email VARCHAR(150) NOT NULL UNIQUE,
+    full_name VARCHAR(200) NOT NULL,
+    role VARCHAR(50) NOT NULL CHECK (role IN ('Auditor', 'Manager', 'Administrator'))
 );
 
-CREATE TABLE requests (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    content TEXT NOT NULL,
-    status TEXT DEFAULT 'pending',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(user_id) REFERENCES users(id)
+-- Таблица подразделений
+CREATE TABLE departments (
+    department_id SERIAL PRIMARY KEY,
+    name VARCHAR(150) NOT NULL UNIQUE,
+    description TEXT
 );
 
-CREATE TABLE staff_actions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    request_id INTEGER NOT NULL,
-    staff_id INTEGER NOT NULL,
-    action TEXT NOT NULL,
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(request_id) REFERENCES requests(id),
-    FOREIGN KEY(staff_id) REFERENCES users(id)
+-- Таблица рисков
+CREATE TABLE risks (
+    risk_id SERIAL PRIMARY KEY,
+    title VARCHAR(150) NOT NULL,
+    description TEXT,
+    severity VARCHAR(20) NOT NULL CHECK (severity IN ('Low', 'Medium', 'High')),
+    likelihood VARCHAR(20) NOT NULL CHECK (likelihood IN ('Low', 'Medium', 'High')),
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    created_by_id INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE
 );
-```
+
+-- Таблица оценок рисков
+CREATE TABLE risk_assessments (
+    assessment_id SERIAL PRIMARY KEY,
+    risk_id INT NOT NULL REFERENCES risks(risk_id) ON DELETE CASCADE,
+    assessed_by_id INT NOT NULL REFERENCES users(user_id) ON DELETE SET NULL,
+    assessment_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    impact_score SMALLINT CHECK (impact_score BETWEEN 1 AND 10),
+    probability_score SMALLINT CHECK (probability_score BETWEEN 1 AND 10),
+    notes TEXT
+);
+
+-- Связь многие-ко-многим между рисками и подразделениями
+CREATE TABLE risk_departments (
+    risk_id INT NOT NULL REFERENCES risks(risk_id) ON DELETE CASCADE,
+    department_id INT NOT NULL REFERENCES departments(department_id) ON DELETE CASCADE,
+    PRIMARY KEY (risk_id, department_id)
+);
+
+-- Таблица аудиторских отчётов
+CREATE TABLE audit_reports (
+    report_id SERIAL PRIMARY KEY,
+    title VARCHAR(200) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    author_id INT REFERENCES users(user_id) ON DELETE SET NULL,
+    content TEXT,
+    department_id INT NOT NULL REFERENCES departments(department_id) ON DELETE RESTRICT
+);
+
+-- Связующая таблица: один отчёт содержит много оценок
+CREATE TABLE audit_report_assessments (
+    report_id INT NOT NULL REFERENCES audit_reports(report_id) ON DELETE CASCADE,
+    assessment_id INT NOT NULL REFERENCES risk_assessments(assessment_id) ON DELETE CASCADE,
+    PRIMARY KEY (report_id, assessment_id)
+);
+
+-- Индексы для ускорения поиска по FK
+CREATE INDEX idx_risks_created_by ON risks(created_by_id);
+CREATE INDEX idx_assessment_risk ON risk_assessments(risk_id);
+CREATE INDEX idx_assessment_user ON risk_assessments(assessed_by_id);
+CREATE INDEX idx_audit_author ON audit_reports(author_id);
 
 ---
 
 ## **Функциональные возможности**
 
 ### Диаграмма вариантов использования
-![Диаграмма вариантов использования](docs/UseCase.png)
+![image](https://github.com/user-attachments/assets/8e06d35c-c00d-46d2-85b1-8c6a57de4bc2)
+
 
 ### User-flow диаграмма
 
-![User Flow](docs/User_Flow.png)
+      
+![image](https://github.com/user-attachments/assets/9c8dc499-5be4-4f9f-bb77-f1d327fcddae)
+Рисунок 2.1 – user flow аудитора
+
+ ![image](https://github.com/user-attachments/assets/8c976c8c-001a-42c9-b796-684ba95433dd)
+Рисунок 2.2 – user flow руководителя
+
+ ![image](https://github.com/user-attachments/assets/d22bd19a-29b6-4fee-a1cd-343f1f8062b1)
+Рисунок 2.3 – user flow администратора
+
 
 
 ---
@@ -85,10 +143,10 @@ CREATE TABLE staff_actions (
 ### UML-диаграммы
 
 #### Диаграмма классов
-![Диаграмма классов](docs/UML_Class_Diagram.png)
+![image](https://github.com/user-attachments/assets/330a5d5e-6bd4-4728-8586-d8642c4b45d9)
 
 #### Диаграмма последовательностей
-![Диаграмма последовательностей](docs/UML_Sequence_Diagram.png)
+![image](https://github.com/user-attachments/assets/2cf8e538-64f7-4561-a178-923e4ccbc979)
 
 #### Диаграмма компонентов
 ![Диаграмма компонентов](docs/UML_Component_Diagram.png)
