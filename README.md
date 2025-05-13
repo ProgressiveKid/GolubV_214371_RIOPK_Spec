@@ -147,6 +147,7 @@ CREATE INDEX idx_audit_author ON audit_reports(author_id);
 
 #### Диаграмма последовательностей
 ![image](https://github.com/user-attachments/assets/2cf8e538-64f7-4561-a178-923e4ccbc979)
+![image](https://github.com/user-attachments/assets/e24d20aa-3bbd-462a-98d9-7c857da33bf9)
 
 #### Диаграмма компонентов
 ![Диаграмма компонентов](docs/UML_Component_Diagram.png)
