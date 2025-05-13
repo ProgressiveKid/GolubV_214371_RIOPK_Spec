@@ -113,7 +113,7 @@ CREATE INDEX idx_risks_created_by ON risks(created_by_id);
 CREATE INDEX idx_assessment_risk ON risk_assessments(risk_id);
 CREATE INDEX idx_assessment_user ON risk_assessments(assessed_by_id);
 CREATE INDEX idx_audit_author ON audit_reports(author_id);
-
+```
 ---
 
 ## **Функциональные возможности**
