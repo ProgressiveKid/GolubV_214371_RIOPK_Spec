@@ -146,40 +146,42 @@ CREATE INDEX idx_audit_author ON audit_reports(author_id);
 ![image](https://github.com/user-attachments/assets/330a5d5e-6bd4-4728-8586-d8642c4b45d9)
 
 #### Диаграмма последовательностей
-![image](https://github.com/user-attachments/assets/2cf8e538-64f7-4561-a178-923e4ccbc979)
 ![image](https://github.com/user-attachments/assets/e24d20aa-3bbd-462a-98d9-7c857da33bf9)
-
-#### Диаграмма компонентов
-![Диаграмма компонентов](docs/UML_Component_Diagram.png)
 
 ### Спецификация API
 
 Открыть в браузере:  
-[http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+[http://127.0.0.1:8000/docs](http://127.0.0.1:7124/swagger)
 
-OpenAPI YAML-файл: `openapi.json` генерируется автоматически.
+SWAGGER YAML-файл: `swagger.json` генерируется автоматически.
 
 ### Безопасность
 
-Использована JWT-аутентификация:
-```python
-from jose import jwt
+Использована куки-аунтефикация:
+```
+private async Task Authenticate(string userName, Role role)
+{
+    var claims = new List<Claim>
+    {
+        new Claim(ClaimsIdentity.DefaultNameClaimType, userName),
+        new Claim("http://schemas.microsoft.com/ws/2008/06/identity/claims/role", role.ToString())
+    };
 
-def create_access_token(data: dict, expires_delta: timedelta = None):
-    to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    ClaimsIdentity id = new ClaimsIdentity(claims, "ApplicationCookie", ClaimsIdentity.DefaultNameClaimType, ClaimsIdentity.DefaultRoleClaimType);
+
+    // Создание куки с AuthenticationProperties
+    await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(id), new AuthenticationProperties
+    {
+        IsPersistent = true,
+        ExpiresUtc = DateTimeOffset.UtcNow.AddYears(1)
+    });
+}
 ```
 
 ### Оценка качества кода
 
-Анализ с использованием `flake8`, `pylint` и `radon`:
-- Cyclomatic Complexity (radon): нормальный уровень
-- Ошибки статики (`flake8`): отсутствуют
-- Code Rating (`pylint`): > 8.0
+![image](https://github.com/user-attachments/assets/b760eb15-b0ff-472f-87d9-bc63a8622d50)
 
-![Оценка_качества_кода](docs/Оценка_качества_кода.png)
 
 ---
 
@@ -188,65 +190,137 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
 ### Unit-тесты
 
 Покрытие:
-- Проверка хеширования пароля
-- Проверка генерации токена
-- Проверка корневого эндпоинта `/`
-- Проверка `/me`
-- Проверка обработки входа
+- Проверка работы с рисками
+- Проверка оценки рисков
+- Проверка работы отчетов аудита
+- Проверка получения данных о подразделениях
+- Проверка работы с пользователями
 
-Файл: `app/tests/test_unit_auth.py`
-```python
-def test_verify_password():
-    assert verify_password("123", get_password_hash("123"))
-```
+![image](https://github.com/user-attachments/assets/e3d59399-df44-42ae-85a0-38e5708b34ec)
+
 
 ### Интеграционные тесты
 
-Файл: `app/tests/test_integration_auth.py`, `app/tests/test_integration_protected.py`
-```python
-def test_login_user():
-    response = client.post("/login", data={"email": "test@example.com", "password": "test"})
-    assert response.status_code == 200
+```C#
+
+using CorporateRiskManagementSystemBack.Infrastructure.Data;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore; // <-- Не забудьте добавить
+using System.Net.Http.Json;
+using System.Net;
+using FluentAssertions;
+using Xunit;
+using CorporateRiskManagementSystemBack.Domain.Entites.DataTransferObjects.RequestModels;
+using CorporateRiskManagementSystemBack.Domain.Entites;
+using CorporateRiskManagementSystemBack;
+
+namespace TestCRMS.Integrations
+{
+    public class ReportControllerIntegrationTests
+    {
+        private readonly HttpClient _client;
+        private readonly WebApplicationFactory<Program> _factory;
+
+        public ReportControllerIntegrationTests()
+        {
+            _factory = new WebApplicationFactory<Program>()
+                .WithWebHostBuilder(builder =>
+                {
+                    builder.ConfigureServices(services =>
+                    {
+                        // Здесь нужно использовать InMemoryDatabase для тестов
+                        var connection = "InMemoryDbForTesting"; // строка для имитации базы данных в памяти
+                        services.AddDbContext<RiskDbContext>(options =>
+                            options.UseInMemoryDatabase(connection));
+                    });
+                });
+
+            _client = _factory.CreateClient();
+        }
+
+        [Fact]
+        public async Task CreateReport_ReturnsBadRequest_WhenAnyRiskHasNoAssessment()
+        {
+            // Arrange: создаём риски и департамент с необходимыми данными
+            var scopeFactory = _factory.Services.GetRequiredService<IServiceScopeFactory>();
+            using var scope = scopeFactory.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<RiskDbContext>();
+
+            // Начинаем транзакцию
+            var transaction = await dbContext.Database.BeginTransactionAsync();
+
+            try
+            {
+                var userId = dbContext.Users.FirstOrDefault().UserId;
+                // Создаём риски
+                var department = new Department {  Name = "FinanceForTests" };
+                dbContext.Departments.Add(department);
+
+                var risk1 = new Risk
+                {
+                    Title = "Risk 1",
+                    CreatedById = userId,
+                    CreatedAt = DateTime.Now,
+                    Description = "wake up on buggati",
+                    Severity = "High",  // Установите значение для поля severity
+                    Likelihood = "Low",
+                };
+
+                var risk2 = new Risk
+                {
+                    Title = "Risk 2",
+                    CreatedById = userId,
+                    Severity = "High",
+                    CreatedAt = DateTime.Now,
+                    Description = "wake up on buggati",
+                    Likelihood = "Low",
+                };
+
+                dbContext.Risks.Add(risk1);
+                dbContext.Risks.Add(risk2);
+                dbContext.SaveChanges();
+
+                var request = new CreateReportRequest
+                {
+                    Username = "admin",
+                    DepartmentId = department.DepartmentId,
+                    Content = "Контент"
+                };
+
+                var response = await _client.PostAsJsonAsync("/Report/CreateReport", request);
+
+                // Assert: проверка на BadRequest с нужным сообщением
+                response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+                var content = await response.Content.ReadAsStringAsync();
+                content.Should().Be("Необходимо выполнить оценку всех существующих рисков для отдела");
+            }
+            finally
+            {
+                // Откатываем все изменения, сделанные в рамках транзакции
+                await transaction.RollbackAsync();
+            }
+        }
+    }
+}
+
 ```
-
-![Тесты](docs/Тесты.png)
-
 ---
 
 ## **Установка и запуск**
 
 ### Манифесты для сборки docker образов
 
-Файл `Dockerfile`:
-```dockerfile
-FROM python:3.10
-WORKDIR /app
-COPY . .
-RUN pip install --no-cache-dir -r requirements.txt
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
+Для корректной работы программного средства необходимы следующие требования:
+1.	операционная система Windows 10, 11;
+2.	Microsoft .NET 6 SDK;
+3.	оперативная память – 2048 Мб;
+4.	свободное место на жестком диске – 500 Мб; 
 
-### Манифесты для развертывания k8s кластера
+Пошаговая инструкция по запуску:
+1.	Откройте Visual Studio и загрузите решение, выбрав файл CorparateRiskmanagment.sln.
+2.	В обозревателе решений установите проект CorparateRiskmanagment Backкак стартовый (ПКМ по проекту → «Установить как стартовый проект»). Нажмите F5 или кнопку «Start». После запуска серверное API будет доступно по адресу http://localhost:7111/swagger.
+3.	Клиентская часть проекта реализована как Razor Pages-приложение, установите этот проект как стартовый и запустите его также через F5 или кнопку «Start». После запуска клиентское приложение будет доступно по адресу http://localhost:7124.
+4.	Зарегистрироваться и авторизация в системе: Обычный пользователь может быть создан через форму регистрации на клиентской части (Razor Pages).
 
-Файл `deployment.yaml`:
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: riopk-app
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: riopk
-  template:
-    metadata:
-      labels:
-        app: riopk
-    spec:
-      containers:
-        - name: riopk
-          image: riopk:latest
-          ports:
-            - containerPort: 8000
 ```
